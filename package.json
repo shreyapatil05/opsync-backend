@@ -1,0 +1,43 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "test": "jest --detectOpenHandles"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.901.0",
+    "bcryptjs": "^3.0.2",
+    "cloudinary": "^2.7.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "events": "^3.3.0",
+    "express": "^4.18.0",
+    "express-rate-limit": "^8.1.0",
+    "express-validator": "^7.2.1",
+    "fs-extra": "^11.3.2",
+    "google-auth-library": "^10.4.0",
+    "helmet": "^8.1.0",
+    "jest": "^30.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "lodash": "^4.17.21",
+    "mongoose": "^8.18.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.9",
+    "nodemon": "^3.1.10",
+    "passport": "^0.7.0",
+    "resend": "^6.1.2",
+    "socket.io": "^4.8.1",
+    "supertest": "^7.1.4"
+  }
+}
