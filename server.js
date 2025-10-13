@@ -29,7 +29,15 @@ import socketSetup from './socket/index.js';
 
 import errorHandler from './middlewares/error.js';
 
+
+
 const app = express();
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:5173', 
+  'http://localhost:3000'  
+].filter(Boolean); 
+
 const server = createServer(app); 
 const io = new Server(server, {
     cors: {
@@ -45,11 +53,7 @@ await connectDB();
 
 app.use(express.json({ limit: '10mb' }))
 
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://localhost:5173', 
-  'http://localhost:3000'  
-].filter(Boolean); 
+
 app.use(cors({
   origin: function (origin, callback) {
     
