@@ -33,7 +33,7 @@ const app = express();
 const server = createServer(app); 
 const io = new Server(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        origin: allowedOrigins, 
         methods: ['GET', 'POST'],
         credentials: true,
     },
@@ -44,7 +44,26 @@ await connectDB();
 
 
 app.use(express.json({ limit: '10mb' }))
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }))
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:5173', 
+  'http://localhost:3000'  
+].filter(Boolean); 
+app.use(cors({
+  origin: function (origin, callback) {
+    
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'), false);
+    }
+  },
+  credentials: true
+}));
+
 app.use(helmet())
 app.use(morgan('dev'))
 app.use(cookieParser())
