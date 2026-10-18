@@ -29,4 +29,6 @@ const ruleSchema = new mongoose.Schema({
     },
 }, { timestamps: true }); 
 
+ruleSchema.index({ projectId: 1, isActive: 1 });
+
 export default mongoose.model('Rule', ruleSchema);

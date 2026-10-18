@@ -12,12 +12,36 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
-        lowerCase: true
+        lowercase: true
     },
+    username: {
+        type: String,
+        unique: true,
+        sparse: true,
+        lowercase: true,
+        trim: true,
+        minlength: 3,
+        maxlength: 30,
+        match: /^[a-z0-9_]+$/
+    },
+    emailVerified: {
+        type: Boolean,
+        default: false
+    },
+    emailVerifiedAt: Date,
+    status: {
+        type: String,
+        enum: ['active', 'deactivated', 'deleted'],
+        default: 'active',
+        index: true
+    },
+    deactivatedAt: Date,
+    deletedAt: Date,
     password:{
         type: String,
         required: true,
-        minlength: 6
+        minlength: 8,
+        select: false
     },
     role:{
         type: String,
@@ -47,6 +71,11 @@ const userSchema = new mongoose.Schema({
     avatar: {
         type: String,
         default: ""
+    },
+    avatarPublicId: {
+        type: String,
+        default: '',
+        select: false
     },
     bio: {
         type: String,

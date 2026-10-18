@@ -46,6 +46,9 @@ const teamSchema = new mongoose.Schema({
     }
 });
 
+teamSchema.index({ admin: 1, createdAt: -1 });
+teamSchema.index({ members: 1, createdAt: -1 });
+
 
 teamSchema.pre('save', function(next) {
     this.updatedAt = Date.now();

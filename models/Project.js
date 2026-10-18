@@ -60,6 +60,11 @@ const projectSchema = new mongoose.Schema({
     }
 });
 
+projectSchema.index({ createdBy: 1, createdAt: -1 });
+projectSchema.index({ projectManager: 1, createdAt: -1 });
+projectSchema.index({ assignedMembers: 1, createdAt: -1 });
+projectSchema.index({ teamId: 1, status: 1, createdAt: -1 });
+
 projectSchema.pre('save', function(next) {
     this.updatedAt = Date.now();
     

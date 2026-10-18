@@ -3,7 +3,7 @@ import Team from '../models/Team.js'
 
 export const getAllUsers = async (req , res) =>{
     try{
-        const users = await User.find().populate('teamId');
+        const users = await User.find().select('-password').populate('teamId');
         res.json(users);
     }
     catch(error){
@@ -42,7 +42,9 @@ export const createUser = async(req ,res) => {
         const user = new User({ name, email, password, role, teamId });
         await user.save();
         await user.populate('teamId');
-        res.status(201).json(user);
+        const safeUser = user.toObject();
+        delete safeUser.password;
+        res.status(201).json(safeUser);
     }
     catch(error){
         res.status(500).json({ error: error.message })
@@ -51,7 +53,7 @@ export const createUser = async(req ,res) => {
 
 export const getUser = async (req, res) =>{
     try{
-        const user = await User.findById(req.params.id).populate('teamId');
+        const user = await User.findById(req.params.id).select('-password').populate('teamId');
         if(!user) return res.status(404).json({ error: 'User not found' });
         res.json(user);
     }
@@ -62,12 +64,31 @@ export const getUser = async (req, res) =>{
 
 export const updateUser = async (req , res) => {
     try{
-        const { name, role, teamId } = req.body;
+        const isSelf = req.user.id === req.params.id;
+        const isAdmin = req.user.role === 'Admin';
+
+        if (!isSelf && !isAdmin) {
+            return res.status(403).json({ error: 'You can only update your own profile' });
+        }
+
+        const allowedUpdates = {};
+        if (req.body.name !== undefined) allowedUpdates.name = req.body.name;
+
+        // Only administrators may change authorization or team membership.
+        if (isAdmin) {
+            if (req.body.role !== undefined) allowedUpdates.role = req.body.role;
+            if (req.body.teamId !== undefined) allowedUpdates.teamId = req.body.teamId;
+        }
+
+        if (Object.keys(allowedUpdates).length === 0) {
+            return res.status(400).json({ error: 'No permitted fields supplied' });
+        }
+
         const user = await User.findByIdAndUpdate(
             req.params.id,
-            { name, role, teamId },
+            allowedUpdates,
             { new: true, runValidators: true }
-        ).populate('teamId');
+        ).select('-password').populate('teamId');
 
         if(!user) return res.status(404).json({ error: 'User not found' });
         res.json(user);

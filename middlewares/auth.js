@@ -18,6 +18,9 @@ const auth = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ error: 'Token invalid - user not found' });
     }
+    if (user.status && user.status !== 'active') {
+      return res.status(403).json({ error: { code: 'ACCOUNT_INACTIVE', message: 'This account is not active' } });
+    }
 
     req.user = user;
     console.log("Auth successful for:", user.email);

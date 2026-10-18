@@ -2,6 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import * as fileController from '../controllers/fileController.js';
 import auth from '../middlewares/auth.js';
+import { validateObjectIdParam } from '../middlewares/validation.js';
+import { validateFileSignature } from '../middlewares/fileSignature.js';
 
 
 const storage = multer.memoryStorage();
@@ -11,38 +13,21 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024, 
   },
-  fileFilter: (req, file, cb) => {
-    console.log('Multer File Filter:');
-    console.log('   - File name:', file.originalname);
-    console.log('   - MIME type:', file.mimetype);
-    console.log('   - Field name:', file.fieldname);
-    cb(null, true); 
-  }
+  fileFilter: (req, file, cb) => cb(null, [
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ].includes(file.mimetype))
 });
 
 const router = express.Router();
-
-
-router.use('/:projectId/upload', (req, res, next) => {
- 
-  console.log('Method:', req.method);
-  console.log('URL:', req.originalUrl);
-  console.log('Headers:', req.headers['content-type']);
-  console.log('User:', req.user?.id);
-  console.log('Project ID:', req.params.projectId);
-  next();
-});
+for (const name of ['projectId', 'fileId']) router.param(name, validateObjectIdParam);
 
 
 router.post('/:projectId/upload', 
   auth, 
   upload.single('file'),
-  (req, res, next) => {
-    console.log(' Multer passed - File details:');
-    console.log('   - File:', req.file);
-    console.log('   - Body:', req.body);
-    next();
-  },
+  validateFileSignature,
   fileController.uploadFileController
 );
 

@@ -1,6 +1,8 @@
 import Team from '../models/Team.js';
 import User from '../models/User.js';
 import Conversation from '../models/Conversation.js';
+import { canReadTeam } from '../policies/teamPolicy.js';
+import { addMemberAndSyncConversation, removeMemberAndSyncConversation } from '../services/teamService.js';
 
 
 export const getUserTeams = async (req, res) => {
@@ -73,13 +75,8 @@ export const getTeam = async (req, res) => {
     }
 
     
-    if (req.user.role !== 'Admin') {
-      const hasAccess = team.admin._id.toString() === req.user.id || 
-                       team.members.some(m => m._id.toString() === req.user.id);
-      
-      if (!hasAccess) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
+    if (!canReadTeam(team, req.user)) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     res.json(team);
@@ -108,61 +105,8 @@ export const addTeamMember = async (req, res) => {
     const userId = newMember._id;
 
     
-    const team = await Team.findById(teamId);
-    if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
-    }
-
-    
-    if (team.members.map(m => m.toString()).includes(userId.toString()) || team.admin.toString() === userId.toString()) {
-      return res.status(400).json({ error: 'User is already a member or the admin of this team' });
-    }
-
-   
-    team.members.push(userId);
-    await team.save();
-
-    console.log(`Added user ${userId} to team ${teamId}`);
-
-    
-    let conversation = await Conversation.findOne({
-      type: 'team',
-      teamId: teamId,
-      isActive: true
-    });
-
-    if (!conversation) {
-      const allParticipants = [
-        ...team.members.map(m => m._id),
-        team.admin._id
-      ];
-
-      conversation = await Conversation.create({
-        type: 'team',
-        name: `${team.name} Team Chat`,
-        teamId: teamId,
-        participants: allParticipants,
-        createdBy: team.admin._id,
-        isActive: true,
-        settings: {
-          allowFileSharing: true,
-          allowImages: true,
-          allowVideos: true
-        }
-      });
-
-      console.log(`Created team conversation with ${allParticipants.length} participants`);
-    } else {
-      const isAlreadyInChat = conversation.participants.some(
-        p => p.toString() === userId.toString()
-      );
-
-      if (!isAlreadyInChat) {
-        conversation.participants.push(userId);
-        await conversation.save();
-        console.log(`Added user ${userId} to existing conversation participants`);
-      }
-    }
+    const team = await addMemberAndSyncConversation(teamId, userId);
+    if (!team) return res.status(400).json({ error: 'Team not found or user is already a member/admin' });
 
     await team.populate('admin', 'name email avatar');
     await team.populate('members', 'name email avatar');
@@ -227,29 +171,8 @@ export const removeTeamMember = async (req, res) => {
       return res.status(403).json({ error: 'Only admins can remove team members' });
     }
 
-    const team = await Team.findById(teamId);
-
-    if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
-    }
-
-    
-    if (userIdToRemove === team.admin.toString()) {
-      return res.status(400).json({ error: 'Cannot remove team admin' });
-    }
-
-   
-    team.members = team.members.filter(memberId => 
-      memberId.toString() !== userIdToRemove
-    );
-    await team.save();
-
-    
-    await Conversation.updateOne(
-      { teamId: teamId, type: 'team' },
-      { $pull: { participants: userIdToRemove } }
-    );
-    console.log(`Removed user ${userIdToRemove} from team conversation participants.`);
+    const team = await removeMemberAndSyncConversation(teamId, userIdToRemove);
+    if (!team) return res.status(404).json({ error: 'Team not found or member cannot be removed' });
 
     await team.populate('admin', 'name email avatar');
     await team.populate('members', 'name email avatar');

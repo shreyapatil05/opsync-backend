@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import Team from '../models/Team.js';
 import Project from '../models/Project.js';
 import mongoose from 'mongoose';
+import { recordActivity } from '../services/activityService.js';
 
 
 export const getConversations = async (req, res) => {
@@ -43,14 +44,19 @@ export const getConversations = async (req, res) => {
     console.log(`Found ${conversations.length} conversations for user ${req.user.id}`);
 
     
-    const conversationsWithStatus = await Promise.all(
-      conversations.map(async (conv) => {
-        const unreadCount = await Message.countDocuments({
-          conversationId: conv._id,
-          sender: { $ne: req.user.id },
-          readBy: { $ne: req.user.id }
-        });
+    const unreadCounts = await Message.aggregate([
+      {
+        $match: {
+          conversationId: { $in: conversations.map(conv => conv._id) },
+          sender: { $ne: new mongoose.Types.ObjectId(req.user.id) },
+          readBy: { $ne: new mongoose.Types.ObjectId(req.user.id) },
+        },
+      },
+      { $group: { _id: '$conversationId', count: { $sum: 1 } } },
+    ]);
+    const unreadByConversation = new Map(unreadCounts.map(item => [item._id.toString(), item.count]));
 
+    const conversationsWithStatus = conversations.map((conv) => {
         let isOnline = false;
         if (conv.type === 'direct') {
           const otherParticipant = conv.participants.find(p => 
@@ -61,11 +67,10 @@ export const getConversations = async (req, res) => {
 
         return {
           ...conv,
-          unreadCount,
+          unreadCount: unreadByConversation.get(conv._id.toString()) || 0,
           isOnline
         };
-      })
-    );
+      });
 
     res.json(conversationsWithStatus);
   } catch (error) {
@@ -78,7 +83,9 @@ export const getConversations = async (req, res) => {
 export const getMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const userId = req.user.id; 
+    const userId = req.user.id;
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 100);
+    const before = req.query.before;
 
    
     const conversation = await Conversation.findById(conversationId).populate('teamId');
@@ -112,11 +119,19 @@ export const getMessages = async (req, res) => {
     
     console.log(`Access granted for user ${userId} to conversation ${conversationId}`);
    
-    const messages = await Message.find({ conversationId })
+    const messageQuery = { conversationId };
+    if (before) messageQuery.createdAt = { $lt: new Date(before) };
+
+    const messages = await Message.find(messageQuery)
       .populate('sender', 'name email avatar')
       .populate('replyTo', 'content sender messageType')
       .populate('replyTo.sender', 'name avatar')
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: -1 })
+      .limit(limit + 1);
+
+    const hasMore = messages.length > limit;
+    if (hasMore) messages.pop();
+    messages.reverse();
 
     await Message.updateMany(
       {
@@ -129,7 +144,14 @@ export const getMessages = async (req, res) => {
       }
     );
 
-    res.json(messages);
+    res.json({
+      messages,
+      pagination: {
+        limit,
+        hasMore,
+        nextCursor: hasMore && messages.length ? messages[0].createdAt.toISOString() : null,
+      },
+    });
   } catch (error) {
     console.error('Error fetching messages:', error);
     res.status(500).json({ error: error.message });
@@ -196,6 +218,8 @@ export const sendMessage = async (req, res) => {
     conversation.lastMessage = message._id;
     conversation.updatedAt = new Date();
     await conversation.save();
+
+    await recordActivity({ actor: req.user.id, category: 'communication', action: replyTo ? 'replied' : 'sent a message', targetType: 'conversation', targetId: conversation._id, targetName: conversation.name || 'Conversation', targetUrl: `/chat?conversation=${conversation._id}`, preview: content?.slice(0, 240) || fileName || messageType, recipients: conversation.participants.map(participant => participant._id).filter(id => id.toString() !== req.user.id) });
 
     
     if (req.app.get('io')) {
@@ -321,13 +345,17 @@ export const getTeamConversation = async (req, res) => {
     const { teamId } = req.params;
 
    
-    const team = await Team.findOne({
-      _id: teamId,
-      $or: [
-        { admin: req.user.id },
-        { members: req.user.id }
-      ]
-    })
+    const teamQuery = req.user.role === 'Admin'
+      ? { _id: teamId }
+      : {
+          _id: teamId,
+          $or: [
+            { admin: req.user.id },
+            { members: req.user.id }
+          ]
+        };
+
+    const team = await Team.findOne(teamQuery)
     .populate('members', 'name email avatar')
     .populate('admin', 'name email avatar');
 
@@ -403,6 +431,14 @@ export const getTeamConversation = async (req, res) => {
         console.log(`Added admin to conversation`);
       }
 
+      await conversation.populate('participants', 'name email avatar isOnline');
+    }
+
+    if (req.user.role === 'Admin' && !conversation.participants.some(
+      participant => participant._id.toString() === req.user.id.toString()
+    )) {
+      conversation.participants.push(req.user.id);
+      await conversation.save();
       await conversation.populate('participants', 'name email avatar isOnline');
     }
 
@@ -598,10 +634,36 @@ export const uploadFile = async (req, res) => {
 
 export const deleteFile = async (req, res) => {
   try {
-    const { publicId, resourceType } = req.body;
+    const { publicId, resourceType, conversationId, messageId } = req.body;
 
-    if (!publicId) {
-      return res.status(400).json({ error: 'No public ID provided' });
+    if (!publicId || !conversationId || !messageId) {
+      return res.status(400).json({ error: 'Public ID, conversation ID, and message ID are required' });
+    }
+
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: req.user.id,
+      isActive: true,
+    });
+    if (!conversation) {
+      return res.status(403).json({ error: 'Access denied to this conversation' });
+    }
+
+    const referencedMessage = await Message.findOne({
+      _id: messageId,
+      conversationId,
+      sender: req.user.id,
+      fileUrl: { $exists: true },
+    });
+    if (!referencedMessage) {
+      return res.status(403).json({ error: 'Only the uploader can delete this file' });
+    }
+
+    const cloudinaryPath = decodeURIComponent(new URL(referencedMessage.fileUrl).pathname)
+      .replace(/^.*\/upload\/(?:v\d+\/)?/, '')
+      .replace(/\.[^/.]+$/, '');
+    if (cloudinaryPath !== publicId) {
+      return res.status(403).json({ error: 'File identifier does not match the message' });
     }
 
     await cloudinary.v2.uploader.destroy(publicId, { 

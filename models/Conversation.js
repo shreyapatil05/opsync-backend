@@ -64,9 +64,14 @@ const conversationSchema = new mongoose.Schema({
   timestamps: true
 });
 
-conversationSchema.index({ participants: 1 });
-conversationSchema.index({ teamId: 1 });
-conversationSchema.index({ projectId: 1 });
-conversationSchema.index({ type: 1 });
+conversationSchema.index({ participants: 1, isActive: 1, updatedAt: -1 });
+conversationSchema.index(
+  { teamId: 1 },
+  { unique: true, partialFilterExpression: { type: 'team', isActive: true } },
+);
+conversationSchema.index(
+  { projectId: 1 },
+  { unique: true, partialFilterExpression: { type: 'project', isActive: true } },
+);
 
 export default mongoose.model('Conversation', conversationSchema);

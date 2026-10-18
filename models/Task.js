@@ -42,6 +42,11 @@ const taskSchema = new mongoose.Schema({
     }
 });
 
+taskSchema.index({ projectId: 1, createdAt: -1 });
+taskSchema.index({ projectId: 1, status: 1 });
+taskSchema.index({ projectId: 1, assignee: 1, status: 1 });
+taskSchema.index({ dueDate: 1 }, { partialFilterExpression: { status: { $in: ['todo', 'in-progress'] } } });
+
 
 taskSchema.pre('save', function(next) {
     this.updatedAt = Date.now(); 

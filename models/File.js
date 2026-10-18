@@ -33,6 +33,8 @@ const fileSchema = new mongoose.Schema({
         type: Date,
         default:Date.now
     }
-
 })
+
+fileSchema.index({ projectId: 1, createdAt: -1 });
+fileSchema.index({ uploader: 1, createdAt: -1 });
 export default mongoose.model('File', fileSchema)
